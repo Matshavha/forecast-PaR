@@ -281,6 +281,7 @@ def download_forecast(n_clicks, dataset_name, forecast_period, forecast_figure, 
 
     return dcc.send_data_frame(df.to_csv, filename=f"{dataset_name}_forecast_{forecast_period}h.csv")
 
-if __name__ == '__main__':
-    app.run_server(debug=True)
+if __name__ == "__main__":
+    app.run_server(host="0.0.0.0", port=8000, debug=True)
+
 
