@@ -260,26 +260,88 @@ def update_forecast(n_clicks, dataset_name, forecast_period):
     )
 
     return forecast_fig, power_factor_fig
-
+    
 @app.callback(
     Output("download-forecast-data", "data"),
     Input("download-button", "n_clicks"),
     State("dataset-dropdown", "value"),
     State("forecast-period", "value"),
-    State("forecast-graph", "figure"),
-    State("power-factor-graph", "figure"),
     prevent_initial_call=True
 )
-def download_forecast(n_clicks, dataset_name, forecast_period, forecast_figure, power_factor_figure):
-    date_values = np.array(forecast_figure["data"][0]["x"], dtype="datetime64[s]")
-    df = pd.DataFrame(date_values, columns=["DateTime"])
-    
-    df["Consumption Forecast"] = forecast_figure["data"][0]["y"]
-    df["Apparent Power Forecast"] = forecast_figure["data"][1]["y"]
-    df["Reactive Power Forecast"] = forecast_figure["data"][2]["y"]
-    df["Power Factor"] = power_factor_figure["data"][0]["y"]
+def download_forecast(n_clicks, dataset_name, forecast_period):
+    combined_results = []
 
-    return dcc.send_data_frame(df.to_csv, filename=f"{dataset_name}_forecast_{forecast_period}h.csv")
+    if dataset_name == "All Tariffs":
+        for name in dataset_names:
+            df = load_data(name)  # Load dataset
+            df = preprocess_features(df)  # Preprocess
+            future_df = create_future_features(df, forecast_period)  # Create future features
+
+            target_columns = ["Total Consumption (kWh)", "Apparent Power (kVA)", "Reactive Power"]
+            forecast_results = {target: np.zeros(forecast_period) for target in target_columns}
+
+            for target_column in target_columns:
+                try:
+                    model = load_model(name, target_column)  # Load model per tariff
+                    X = future_df.drop(columns=['DateTime'], errors='ignore')
+                    expected_features = model.get_booster().feature_names
+                    X = X[expected_features]
+
+                    forecast_results[target_column] = model.predict(X)  # Predict for each tariff
+                except FileNotFoundError:
+                    continue
+
+            # Create forecast dataframe per tariff
+            tariff_forecast = future_df[['DateTime']].copy()  # Keep only DateTime
+            tariff_forecast['Consumption Forecast'] = forecast_results["Total Consumption (kWh)"] / 1000
+            tariff_forecast['Apparent Power Forecast'] = forecast_results["Apparent Power (kVA)"] / 1000
+            tariff_forecast['Reactive Power Forecast'] = forecast_results["Reactive Power"] / 1000
+            tariff_forecast['Power Factor'] = np.where(
+                tariff_forecast['Apparent Power Forecast'] == 0, 0, 
+                tariff_forecast['Consumption Forecast'] / tariff_forecast['Apparent Power Forecast']
+            )
+            tariff_forecast["Tariff Plan"] = name.replace("_Hourly", "")  # Assign tariff plan
+
+            combined_results.append(tariff_forecast)  # Store individual tariff results
+
+        df = pd.concat(combined_results, ignore_index=True)  # Combine all tariffs
+
+    else:
+        df = load_data(dataset_name)
+        df = preprocess_features(df)
+        future_df = create_future_features(df, forecast_period)
+
+        target_columns = ["Total Consumption (kWh)", "Apparent Power (kVA)", "Reactive Power"]
+        forecast_results = {target: np.zeros(forecast_period) for target in target_columns}
+
+        for target_column in target_columns:
+            try:
+                model = load_model(dataset_name, target_column)
+                X = future_df.drop(columns=['DateTime'], errors='ignore')
+                expected_features = model.get_booster().feature_names
+                X = X[expected_features]
+
+                forecast_results[target_column] = model.predict(X)
+            except FileNotFoundError:
+                continue
+
+        future_df = future_df[['DateTime']].copy()  # Keep only DateTime
+        future_df['Consumption Forecast'] = forecast_results["Total Consumption (kWh)"] / 1000
+        future_df['Apparent Power Forecast'] = forecast_results["Apparent Power (kVA)"] / 1000
+        future_df['Reactive Power Forecast'] = forecast_results["Reactive Power"] / 1000
+        future_df['Power Factor'] = np.where(
+            future_df['Apparent Power Forecast'] == 0, 0, 
+            future_df['Consumption Forecast'] / future_df['Apparent Power Forecast']
+        )
+        future_df["Tariff Plan"] = dataset_name.replace("_Hourly", "")
+
+        df = future_df  # Single dataset results
+
+    # Ensure DateTime is sorted in order for each Tariff Plan
+    df = df.sort_values(by=["Tariff Plan", "DateTime"]).reset_index(drop=True)
+
+    # Download as CSV
+    return dcc.send_data_frame(df.to_csv, filename=f"{dataset_name}_forecast_{forecast_period}h.csv", index=False)
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8000, debug=True)
