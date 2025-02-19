@@ -9,3 +9,5 @@ holidays==0.29
 gunicorn==21.2.0
 uvicorn==0.29.0
 openpyxl==3.1.2
+flask==3.0.0  # Required for Dash
+requests==2.31.0  # Ensures HTTP requests work
