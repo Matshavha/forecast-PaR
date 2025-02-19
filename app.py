@@ -354,21 +354,20 @@ def download_forecast(n_clicks, dataset_name, forecast_period):
     prevent_initial_call=True
 )
 def display_powerbi_report(n_clicks):
-    powerbi_embed_url = "https://app.powerbi.com/reportEmbed?reportId=a835a316-18ba-442b-bba0-a8a5967b9a44&autoAuth=true&ctid=93aedbdc-cc67-4652-aa12-d250a876ae79"
+    powerbi_embed_url = "https://app.powerbi.com/reportEmbed?reportId=a835a316-18ba-442b-bba0-a8a5967b9a44&autoAuth=true&ctid=93aedbdc-cc67-4652-aa12-d250a876ae79&allowFraming=True"
 
     return html.Div(
         children=[
-            html.Button("Close Report", id="close-powerbi", className="btn btn-danger", style={'position': 'absolute', 'top': '10px', 'right': '10px'}),
             html.Iframe(
                 src=powerbi_embed_url,
                 style={
                     "position": "fixed",
                     "top": "0",
                     "left": "0",
-                    "width": "100vw",  # Full viewport width
-                    "height": "100vh",  # Full viewport height
+                    "width": "100vw",  
+                    "height": "100vh",  
                     "border": "none",
-                    "z-index": "1000",  # Ensures it stays above all other elements
+                    "z-index": "1000",
                     "background": "white"
                 }
             )
