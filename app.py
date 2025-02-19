@@ -105,25 +105,17 @@ app.layout = dbc.Container([
         children=[
             html.Img(
                 src="/assets/logo.jpg",  # Ensure you place your logo file in the 'assets' folder
-                style={
-                    'height': '100px',  # Adjust size as needed
-                    'width': 'auto'
-                }
+                style={'height': '100px', 'width': 'auto'}
             ),
             html.H1("Energy Forecasting Dashboard", className="text-center", style={'margin': '0'})
         ]
     ),
 
     html.Div(
-        style={
-            'display': 'flex',
-            'flex-wrap': 'wrap',  # Ensures responsiveness on smaller screens
-            'align-items': 'center',
-            'gap': '10px'  # Adds spacing between elements
-        },
+        style={'display': 'flex', 'flex-wrap': 'wrap', 'align-items': 'center', 'gap': '10px'},
         children=[
             html.Div(
-                style={'flex-grow': '1', 'min-width': '250px'},  # Ensures dropdown resizes properly
+                style={'flex-grow': '1', 'min-width': '250px'},
                 children=[
                     html.Label("Select Dataset", style={'font-weight': 'bold'}),
                     dcc.Dropdown(
@@ -131,19 +123,28 @@ app.layout = dbc.Container([
                         options=[{'label': name, 'value': name} for name in dataset_names] + [{'label': "All Tariffs", 'value': "All Tariffs"}],
                         value=dataset_names[0],
                         clearable=False,
-                        style={'width': '50%'}  # Makes it fully responsive
+                        style={'width': '50%'}
                     )
                 ]
             ),
-    
+
             html.Div(
-                style={'min-width': '180px'},  # Ensures the button does not shrink
+                style={'min-width': '180px'},
                 children=[
                     html.Button("Download Forecast", id="download-button", className="btn btn-success", style={'width': '100%', 'height': '40px'})
                 ]
             ),
-    
-            dcc.Download(id="download-forecast-data")  # Hidden download component for CSV download
+
+            dcc.Download(id="download-forecast-data"),  # Hidden download component for CSV download
+            
+            # Power BI Button & Container
+            html.Div(
+                style={'min-width': '180px'},
+                children=[
+                    html.Button("View Power BI Report", id="powerbi-button", className="btn btn-info", style={'width': '100%', 'height': '40px'}),
+                    html.Div(id="powerbi-container", style={'width': '100%', 'margin-top': '15px'}),
+                ]
+            ),
         ]
     ),
 
@@ -151,31 +152,19 @@ app.layout = dbc.Container([
         dbc.Col([
             html.Label("Select Forecast Period (Hours)", style={'font-weight': 'bold'}),
             dcc.Input(id='forecast-period', type='number', value=24, min=1, max=168, step=1, style={'width': '20%'})
-        ], width=6, xs=12),  # Takes full width on mobile
+        ], width=6, xs=12),
         dbc.Col([
             html.Button("Generate Forecast", id="predict-button", className="btn btn-primary mt-4", style={'width': '100%'})
-        ], width=6, xs=12)  # Takes full width on mobile
+        ], width=6, xs=12)
     ], className="mt-3"),
 
     html.Hr(),
 
     html.Div(
-        style={
-            'display': 'flex',
-            'flex-direction': 'column',  # Stacks graphs vertically on smaller screens
-            'align-items': 'center',  # Center-align for better mobile view
-            'width': '100%'  # Ensures full width responsiveness
-        },
+        style={'display': 'flex', 'flex-direction': 'column', 'align-items': 'center', 'width': '100%'},
         children=[
-            dcc.Graph(
-                id='forecast-graph', 
-                style={'width': '100%', 'max-width': '900px', 'height': '400px'}
-            ),
-
-            dcc.Graph(
-                id='power-factor-graph', 
-                style={'width': '100%', 'max-width': '800px', 'height': '300px', 'margin-top': '10px'}
-            )
+            dcc.Graph(id='forecast-graph', style={'width': '100%', 'max-width': '900px', 'height': '400px'}),
+            dcc.Graph(id='power-factor-graph', style={'width': '100%', 'max-width': '800px', 'height': '300px', 'margin-top': '10px'})
         ]
     ),
 
@@ -342,6 +331,40 @@ def download_forecast(n_clicks, dataset_name, forecast_period):
 
     # Download as CSV
     return dcc.send_data_frame(df.to_csv, filename=f"{dataset_name}_forecast_{forecast_period}h.csv", index=False)
+@app.callback(
+    Output("powerbi-container", "children"),
+    Input("powerbi-button", "n_clicks"),
+    prevent_initial_call=True
+)
+def display_powerbi_report(n_clicks):
+    powerbi_embed_url = "https://app.powerbi.com/reportEmbed?reportId=a835a316-18ba-442b-bba0-a8a5967b9a44&autoAuth=true&ctid=93aedbdc-cc67-4652-aa12-d250a876ae79"
+
+    return html.Div(
+        children=[
+            html.Iframe(
+                src=powerbi_embed_url,
+                style={
+                    "position": "fixed",
+                    "top": "0",
+                    "left": "0",
+                    "width": "100vw",  # Full viewport width
+                    "height": "100vh",  # Full viewport height
+                    "border": "none",
+                    "z-index": "1000",  # Ensures it stays above all other elements
+                    "background": "white"
+                }
+            )
+        ],
+        style={
+            "position": "fixed",
+            "top": "0",
+            "left": "0",
+            "width": "100vw",
+            "height": "100vh",
+            "z-index": "1000",
+            "background": "white"
+        }
+    )
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8000, debug=True)
