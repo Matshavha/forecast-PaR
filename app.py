@@ -144,6 +144,12 @@ app.layout = dbc.Container([
             ),
     
             dcc.Download(id="download-forecast-data")  # Hidden download component for CSV download
+          # Add Power BI Embed Button & Iframe
+            html.Div(
+                style={'min-width': '180px'},  # Ensure button does not shrink
+                children=[
+                    html.Button("View Power BI Report", id="powerbi-button", className="btn btn-info", style={'width': '100%', 'height': '40px'}),
+                    html.Div(id="powerbi-container", style={'width': '100%', 'margin-top': '15px'}),
         ]
     ),
 
@@ -342,6 +348,33 @@ def download_forecast(n_clicks, dataset_name, forecast_period):
 
     # Download as CSV
     return dcc.send_data_frame(df.to_csv, filename=f"{dataset_name}_forecast_{forecast_period}h.csv", index=False)
+@app.callback(
+    Output("powerbi-container", "children"),
+    Input("powerbi-button", "n_clicks"),
+    prevent_initial_call=True
+)
+def display_powerbi_report(n_clicks):
+    powerbi_embed_url = "https://app.powerbi.com/reportEmbed?reportId=a835a316-18ba-442b-bba0-a8a5967b9a44&autoAuth=true&ctid=93aedbdc-cc67-4652-aa12-d250a876ae79"
+
+    return html.Div(
+        children=[
+            html.Button("Close Report", id="close-powerbi", className="btn btn-danger", style={'position': 'absolute', 'top': '10px', 'right': '10px'}),
+            html.Iframe(
+                src=powerbi_embed_url,
+                style={
+                    "position": "fixed",
+                    "top": "0",
+                    "left": "0",
+                    "width": "100vw",  # Full viewport width
+                    "height": "100vh",  # Full viewport height
+                    "border": "none",
+                    "z-index": "1000",  # Ensures it stays above all other elements
+                    "background": "white"
+                }
+            )
+        ],
+        style={"position": "fixed", "top": "0", "left": "0", "width": "100vw", "height": "100vh", "z-index": "1000", "background": "white"}
+    )
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=8000, debug=True)
