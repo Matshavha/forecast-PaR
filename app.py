@@ -151,7 +151,7 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             html.Label("Select Forecast Period (Hours)", style={'font-weight': 'bold'}),
-            dcc.Input(id='forecast-period', type='number', value=24, min=1, max=168, step=1, style={'width': '20%'})
+            dcc.Input(id='forecast-period', type='number', value=24, min=1, max=336, step=1, style={'width': '20%'})
         ], width=6, xs=12),
         dbc.Col([
             html.Button("Generate Forecast", id="predict-button", className="btn btn-primary mt-4", style={'width': '100%'})
