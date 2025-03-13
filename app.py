@@ -146,7 +146,7 @@ app.layout = dbc.Container([
                         id="powerbi-container",
                         children=[
                             html.Iframe(
-                                src="https://app.powerbi.com/reportEmbed?reportId=a835a316-18ba-442b-bba0-a8a5967b9a44&autoAuth=true&ctid=93aedbdc-cc67-4652-93aedbdc-cc67-4652-bba0-a8a5967b9a44",
+                                src="https://app.powerbi.com/reportEmbed?reportId=a835a316-18ba-442b-bba0-a8a5967b9a44&autoAuth=true&ctid=93aedbdc-cc67-4652-aa12-d250a876ae79",
                                 style={
                                     "width": "100vw",
                                     "height": "100vh",
