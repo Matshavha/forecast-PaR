@@ -142,7 +142,23 @@ app.layout = dbc.Container([
                 style={'min-width': '180px'},
                 children=[
                     html.Button("View Power BI Report", id="powerbi-button", className="btn btn-info", style={'width': '100%', 'height': '40px'}),
-                    html.Div(id="powerbi-container", style={'width': '100%', 'margin-top': '15px'}),
+                    html.Div(
+                        id="powerbi-container",
+                        children=[
+                            html.Iframe(
+                                src="https://app.powerbi.com/reportEmbed?reportId=a835a316-18ba-442b-bba0-a8a5967b9a44&autoAuth=true&ctid=93aedbdc-cc67-4652-93aedbdc-cc67-4652-bba0-a8a5967b9a44",
+                                style={
+                                    "width": "100vw",
+                                    "height": "100vh",
+                                    "border": "none",
+                                    "position": "fixed",
+                                    "top": "0",
+                                    "left": "0",
+                                    "zIndex": "1000"
+                                }
+                            )
+                        ]
+                    ),
                 ]
             ),
         ]
