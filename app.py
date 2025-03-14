@@ -191,7 +191,7 @@ app.layout = dbc.Container([
 
     html.Footer(
         children=[
-            html.P("Developed by Dx - DET | © 2025 All Rights Reserved", style={'text-align': 'center'})
+            html.P("Developed by Eskom Distribution - Electricity Pricing | © 2025 All Rights Reserved", style={'text-align': 'center'})
         ],
         style={'position': 'fixed', 'bottom': '0', 'width': '100%', 'background-color': '#f8f9fa', 'padding': '10px'}
     )
