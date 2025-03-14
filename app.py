@@ -9,13 +9,14 @@ import xgboost as xgb
 import plotly.express as px
 import holidays
 
+
 # Set directories to the current directory since models, Excel files, and app are in the same folder
 data_directory = "Files"
 model_directory = "Files"
 
 dataset_names = [
     "Megaflex_Hourly", "Miniflex_Hourly", "Ruraflex_Hourly", "Transflex_Hourly",
-    "Megaflex_Munic_Hourly", "Miniflex_Munic_Hourly", "Ruraflex_Munic_Hourly",
+    "Megaflex_Munic_Hourly", "Miniflex_Munic_Hourly", "Ruraflex_Munic_Hourly", "National",
     "Nightsave_Urban_Hourly", "Nightsave_Rural_Hourly", "Nightsave_Urban_Munic_Hourly", "Nightsave_Rural_Munic_Hourly"
 ]
 
@@ -26,41 +27,40 @@ def load_model(dataset_name, model_type):
         "Reactive Power": "reactive"
     }
     model_file = f"{dataset_name}_{model_map[model_type]}.pkl"
-    model_path = os.path.join(model_directory, model_file)  # Now loads from 'Files' folder
+    model_path = os.path.join(model_directory, model_file)
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
     return joblib.load(model_path)
 
 def load_data(dataset_name):
     file_path = os.path.join(data_directory, f"{dataset_name}_last_170_hours.xlsx")
-    return pd.read_excel(file_path)
+    df = pd.read_excel(file_path)
+    return df
 
 
 def preprocess_features(df):
     df['DateTime'] = pd.to_datetime(df['DateTime'])
-    df = df.sort_values(by='DateTime')
+    df.sort_values(by='DateTime', inplace=True)
     df['year'] = df['DateTime'].dt.year
     df['month'] = df['DateTime'].dt.month
     df['day'] = df['DateTime'].dt.day
     df['hour'] = df['DateTime'].dt.hour
     df['day_of_week'] = df['DateTime'].dt.dayofweek
     df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
-    
-    # Add South African holidays
-    sa_holidays = holidays.ZA(years=df['DateTime'].dt.year.unique())
+
+    sa_holidays = holidays.ZA(years=df['year'].unique())
     df['is_holiday'] = df['DateTime'].dt.date.apply(lambda x: int(x in sa_holidays))
-    
-    # Compute rolling means
+
     df['rolling_mean_6'] = df['Total Consumption (kWh)'].rolling(window=6).mean()
     df['rolling_mean_12'] = df['Total Consumption (kWh)'].rolling(window=12).mean()
-    
-    return df.dropna()
+    df.dropna(inplace=True)
+
+    return df
 
 def create_future_features(df, forecast_period):
-    future_dates = pd.date_range(start=df['DateTime'].max(), periods=forecast_period + 1, freq='H')[1:]
+    future_dates = pd.date_range(start=df['DateTime'].max() + pd.Timedelta(hours=1), 
+                                 periods=forecast_period, freq='H')
     future_df = pd.DataFrame({'DateTime': future_dates})
-
-    # Generate future time-based features
     future_df['year'] = future_df['DateTime'].dt.year
     future_df['month'] = future_df['DateTime'].dt.month
     future_df['day'] = future_df['DateTime'].dt.day
@@ -68,32 +68,33 @@ def create_future_features(df, forecast_period):
     future_df['day_of_week'] = future_df['DateTime'].dt.dayofweek
     future_df['is_weekend'] = future_df['day_of_week'].isin([5, 6]).astype(int)
 
-    # Ensure 'is_holiday' feature exists
     sa_holidays = holidays.ZA(years=future_df['year'].unique())
     future_df['is_holiday'] = future_df['DateTime'].dt.date.apply(lambda x: int(x in sa_holidays))
 
-    # Fill rolling means with last known value
-    future_df['rolling_mean_6'] = df['rolling_mean_6'].iloc[-1] if 'rolling_mean_6' in df.columns else df['Total Consumption (kWh)'].rolling(6).mean().iloc[-1]
-    future_df['rolling_mean_12'] = df['rolling_mean_12'].iloc[-1] if 'rolling_mean_12' in df.columns else df['Total Consumption (kWh)'].rolling(12).mean().iloc[-1]
+    last_row = df.iloc[-1]
 
-    # Carry forward lagged values only if enough historical data is available
-    for lag in [1, 2, 3, 6, 24, 168]:
-        if len(df) >= lag:
+    #future_df['rolling_mean_6'] = last_row.get('rolling_mean_6', np.nan)
+    #future_df['rolling_mean_12'] = last_row.get('rolling_mean_12', np.nan)
+
+    # ✅ **Safe Handling of Lags**
+    for lag in [168]:
+        if len(df) >= lag:  # ✅ Ensure enough data exists
             future_df[f'lag_{lag}'] = df['Total Consumption (kWh)'].iloc[-lag]
-            future_df[f'lag_{lag}_apparent'] = df['Apparent Power (kVA)'].iloc[-lag]
-            if 'Reactive Power' in df.columns:
-                future_df[f'lag_{lag}_reactive'] = df['Reactive Power'].iloc[-lag]
+            future_df[f'lag_{lag}_apparent'] = df['Apparent Power (kVA)'].iloc[-lag] if 'Apparent Power (kVA)' in df.columns else 0
+            future_df[f'lag_{lag}_reactive'] = df['Reactive Power'].iloc[-lag] if 'Reactive Power' in df.columns else 0
         else:
-            future_df[f'lag_{lag}'] = df['Total Consumption (kWh)'].iloc[-1]
-            future_df[f'lag_{lag}_apparent'] = df['Apparent Power (kVA)'].iloc[-1]
-            if 'Reactive Power' in df.columns:
-                future_df[f'lag_{lag}_reactive'] = df['Reactive Power'].iloc[-1]
+            future_df[f'lag_{lag}'] = last_row['Total Consumption (kWh)']
+            future_df[f'lag_{lag}_apparent'] = last_row.get('Apparent Power (kVA)', 0)
+            future_df[f'lag_{lag}_reactive'] = last_row.get('Reactive Power', 0)
 
     return future_df
 
+
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+
 server = app.server
 app.layout = dbc.Container([
+
     html.Div(
         style={
             'display': 'flex',
@@ -105,17 +106,25 @@ app.layout = dbc.Container([
         children=[
             html.Img(
                 src="/assets/logo.jpg",  # Ensure you place your logo file in the 'assets' folder
-                style={'height': '100px', 'width': 'auto'}
+                style={
+                    'height': '100px',  # Adjust size as needed
+                    'width': 'auto'
+                }
             ),
             html.H1("Energy Forecasting Dashboard", className="text-center", style={'margin': '0'})
         ]
     ),
 
     html.Div(
-        style={'display': 'flex', 'flex-wrap': 'wrap', 'align-items': 'center', 'gap': '10px'},
+        style={
+            'display': 'flex',
+            'flex-wrap': 'wrap',  # Ensures responsiveness on smaller screens
+            'align-items': 'center',
+            'gap': '10px'  # Adds spacing between elements
+        },
         children=[
             html.Div(
-                style={'flex-grow': '1', 'min-width': '250px'},
+                style={'flex-grow': '1', 'min-width': '250px'},  # Ensures dropdown resizes properly
                 children=[
                     html.Label("Select Dataset", style={'font-weight': 'bold'}),
                     dcc.Dropdown(
@@ -123,54 +132,66 @@ app.layout = dbc.Container([
                         options=[{'label': name, 'value': name} for name in dataset_names] + [{'label': "All Tariffs", 'value': "All Tariffs"}],
                         value=dataset_names[0],
                         clearable=False,
-                        style={'width': '50%'}
+                        style={'width': '50%'}  # Makes it fully responsive
                     )
                 ]
             ),
-
+    
             html.Div(
-                style={'min-width': '180px'},
+                style={'min-width': '180px'},  # Ensures the button does not shrink
                 children=[
                     html.Button("Download Forecast", id="download-button", className="btn btn-success", style={'width': '100%', 'height': '40px'})
                 ]
             ),
-
+    
             dcc.Download(id="download-forecast-data"),  # Hidden download component for CSV download
-            
-            # Power BI Button & Container
+            # Add Power BI Embed Button & Iframe
             html.Div(
-                style={'min-width': '180px'},
+                style={'min-width': '180px'},  # Ensure button does not shrink
                 children=[
                     html.Button("View Power BI Report", id="powerbi-button", className="btn btn-info", style={'width': '100%', 'height': '40px'}),
                     html.Div(id="powerbi-container", style={'width': '100%', 'margin-top': '15px'}),
                 ]
             ),
+
         ]
     ),
 
     dbc.Row([
         dbc.Col([
             html.Label("Select Forecast Period (Hours)", style={'font-weight': 'bold'}),
-            dcc.Input(id='forecast-period', type='number', value=24, min=1, max=336, step=1, style={'width': '20%'})
-        ], width=6, xs=12),
+            dcc.Input(id='forecast-period', type='number', value=24, min=1, max=168, step=1, style={'width': '20%'})
+        ], width=6, xs=12),  # Takes full width on mobile
         dbc.Col([
             html.Button("Generate Forecast", id="predict-button", className="btn btn-primary mt-4", style={'width': '100%'})
-        ], width=6, xs=12)
+        ], width=6, xs=12)  # Takes full width on mobile
     ], className="mt-3"),
 
     html.Hr(),
 
     html.Div(
-        style={'display': 'flex', 'flex-direction': 'column', 'align-items': 'center', 'width': '100%'},
+        style={
+            'display': 'flex',
+            'flex-direction': 'column',  # Stacks graphs vertically on smaller screens
+            'align-items': 'center',  # Center-align for better mobile view
+            'width': '100%'  # Ensures full width responsiveness
+        },
         children=[
-            dcc.Graph(id='forecast-graph', style={'width': '100%', 'max-width': '900px', 'height': '400px'}),
-            dcc.Graph(id='power-factor-graph', style={'width': '100%', 'max-width': '800px', 'height': '300px', 'margin-top': '10px'})
+            dcc.Graph(
+                id='forecast-graph', 
+                style={'width': '100%', 'max-width': '900px', 'height': '400px'}
+            ),
+
+            dcc.Graph(
+                id='power-factor-graph', 
+                style={'width': '100%', 'max-width': '800px', 'height': '300px', 'margin-top': '10px'}
+            )
         ]
     ),
 
     html.Footer(
         children=[
-            html.P("Developed by Dx - Electricity Pricing | © 2025 All Rights Reserved", style={'text-align': 'center'})
+            html.P("Developed by Dx - DET | © 2025 All Rights Reserved", style={'text-align': 'center'})
         ],
         style={'position': 'fixed', 'bottom': '0', 'width': '100%', 'background-color': '#f8f9fa', 'padding': '10px'}
     )
@@ -191,7 +212,8 @@ def update_forecast(n_clicks, dataset_name, forecast_period):
     forecast_results = {target: np.zeros(forecast_period) for target in target_columns}
 
     if dataset_name == "All Tariffs":
-        for name in dataset_names[:-1]:
+        for name in dataset_names:
+           if name != "National":  # ✅ Exclude Summed_Hourly_Power
             df = load_data(name)
             df = preprocess_features(df)
             future_df = create_future_features(df, forecast_period)
@@ -249,7 +271,13 @@ def update_forecast(n_clicks, dataset_name, forecast_period):
     )
 
     return forecast_fig, power_factor_fig
-    
+
+tou_mapping = {
+    "Weekdays":  [3, 3, 3, 3, 3, 3, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 3, 3],
+    "Saturday":  [3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3],
+    "Sunday_Holiday": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+}
+
 @app.callback(
     Output("download-forecast-data", "data"),
     Input("download-button", "n_clicks"),
@@ -262,6 +290,7 @@ def download_forecast(n_clicks, dataset_name, forecast_period):
 
     if dataset_name == "All Tariffs":
         for name in dataset_names:
+          if name != "National":  # ✅ Exclude Summed_Hourly_Power
             df = load_data(name)  # Load dataset
             df = preprocess_features(df)  # Preprocess
             future_df = create_future_features(df, forecast_period)  # Create future features
@@ -290,6 +319,22 @@ def download_forecast(n_clicks, dataset_name, forecast_period):
                 tariff_forecast['Consumption Forecast'] / tariff_forecast['Apparent Power Forecast']
             )
             tariff_forecast["Tariff Plan"] = name.replace("_Hourly", "")  # Assign tariff plan
+
+            # Add TOU column
+            tariff_forecast['hour'] = tariff_forecast['DateTime'].dt.hour
+            tariff_forecast['day_of_week'] = tariff_forecast['DateTime'].dt.dayofweek
+            tariff_forecast['is_weekend'] = tariff_forecast['day_of_week'].isin([5, 6])
+
+            # Assign TOU category
+            def assign_tou(row):
+                if row['is_weekend']:
+                    return tou_mapping["Sunday_Holiday"][row['hour']]
+                elif row['day_of_week'] == 5:
+                    return tou_mapping["Saturday"][row['hour']]
+                else:
+                    return tou_mapping["Weekdays"][row['hour']]
+            
+            tariff_forecast["TOU"] = tariff_forecast.apply(assign_tou, axis=1)
 
             combined_results.append(tariff_forecast)  # Store individual tariff results
 
@@ -324,13 +369,34 @@ def download_forecast(n_clicks, dataset_name, forecast_period):
         )
         future_df["Tariff Plan"] = dataset_name.replace("_Hourly", "")
 
+        # Add TOU column
+        future_df['hour'] = future_df['DateTime'].dt.hour
+        future_df['day_of_week'] = future_df['DateTime'].dt.dayofweek
+        future_df['is_weekend'] = future_df['day_of_week'].isin([5, 6])
+
+        def assign_tou(row):
+            if row['is_weekend']:
+                return tou_mapping["Sunday_Holiday"][row['hour']]
+            elif row['day_of_week'] == 5:
+                return tou_mapping["Saturday"][row['hour']]
+            else:
+                return tou_mapping["Weekdays"][row['hour']]
+        
+        future_df["TOU"] = future_df.apply(assign_tou, axis=1)
+
         df = future_df  # Single dataset results
 
     # Ensure DateTime is sorted in order for each Tariff Plan
     df = df.sort_values(by=["Tariff Plan", "DateTime"]).reset_index(drop=True)
 
+    # Drop unnecessary columns
+    df = df[['DateTime', 'TOU', 'Consumption Forecast', 'Apparent Power Forecast', 'Reactive Power Forecast', 'Power Factor', 'Tariff Plan']]
+
     # Download as CSV
     return dcc.send_data_frame(df.to_csv, filename=f"{dataset_name}_forecast_{forecast_period}h.csv", index=False)
+
+#from dash import callback_context
+
 @app.callback(
     Output("powerbi-container", "children"),
     Input("powerbi-button", "n_clicks"),
@@ -341,6 +407,7 @@ def display_powerbi_report(n_clicks):
 
     return html.Div(
         children=[
+            html.Button("Close Report", id="close-powerbi", className="btn btn-danger", style={'position': 'absolute', 'top': '10px', 'right': '10px'}),
             html.Iframe(
                 src=powerbi_embed_url,
                 style={
@@ -355,16 +422,9 @@ def display_powerbi_report(n_clicks):
                 }
             )
         ],
-        style={
-            "position": "fixed",
-            "top": "0",
-            "left": "0",
-            "width": "100vw",
-            "height": "100vh",
-            "z-index": "1000",
-            "background": "white"
-        }
+        style={"position": "fixed", "top": "0", "left": "0", "width": "100vw", "height": "100vh", "z-index": "1000", "background": "white"}
     )
 
+
 if __name__ == "__main__":
-    app.run_server(host="0.0.0.0", port=8000, debug=True)
+    app.run_server(debug=True)  
